@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -6,64 +8,61 @@ import streamlit as st
 from scipy import stats
 
 from cleaning import build_tables
-from i18n import PAGES, TEXTS, TRANSPORT_LABELS, describe_r
+from i18n import GROUPS, PAGES, TEXTS, TRANSPORT_LABELS, describe_r
+from style import (
+    BLACK,
+    COLORWAY,
+    CSS,
+    CYAN,
+    GREEN,
+    PINK,
+    YELLOW,
+    retro_fig,
+)
 
 ALPHA = 0.05
 
 st.set_page_config(
     page_title="Travel Time & Attendance",
-    page_icon="📊",
+    page_icon="🕹️",
     layout="wide",
 )
-
-CSS = """
-<style>
-.hero {
-    background: linear-gradient(135deg, #0b1f3a 0%, #1d4ed8 100%);
-    padding: 1.6rem 1.8rem;
-    border-radius: 18px;
-    color: #fff;
-    margin-bottom: 1rem;
-}
-.hero h1 { margin: 0 0 0.4rem 0; font-size: 1.8rem; }
-.hero p { margin: 0; opacity: 0.95; font-size: 1.05rem; }
-.card {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 16px;
-    padding: 1rem 1.1rem;
-    margin-bottom: 0.8rem;
-}
-.big-r {
-    font-size: 2.2rem;
-    font-weight: 700;
-    color: #1d4ed8;
-    margin: 0.2rem 0;
-}
-.decision {
-    font-size: 1.25rem;
-    font-weight: 700;
-    padding: 0.8rem 1rem;
-    border-radius: 12px;
-}
-.ok { background: #ecfdf5; color: #065f46; }
-.warn { background: #fff7ed; color: #9a3412; }
-</style>
-"""
 st.markdown(CSS, unsafe_allow_html=True)
 
+# --------------------------------------------------------------------------
+# Streamlit version helpers (use_container_width was replaced by width="stretch")
+# --------------------------------------------------------------------------
+_VER = tuple(int(p) for p in re.findall(r"\d+", st.__version__)[:2])
 
+
+def _wide(fn, *args, **kwargs):
+    if _VER >= (1, 50):
+        try:
+            return fn(*args, width="stretch", **kwargs)
+        except Exception:
+            pass
+    return fn(*args, use_container_width=True, **kwargs)
+
+
+def table(df):
+    _wide(st.dataframe, df, hide_index=True)
+
+
+def show(fig, height=420):
+    retro_fig(fig, height)
+    _wide(st.plotly_chart, fig, theme=None)
+
+
+def button(container, label, **kwargs):
+    return _wide(container.button, label, **kwargs)
+
+
+# --------------------------------------------------------------------------
+# Data and statistics
+# --------------------------------------------------------------------------
 @st.cache_data
 def load_data():
     return build_tables()
-
-
-def t(lang):
-    return TEXTS[lang]
-
-
-def transport_name(key, lang):
-    return TRANSPORT_LABELS[lang].get(key, key)
 
 
 def summarize(series):
@@ -99,65 +98,106 @@ reg = stats.linregress(x, y)
 r2 = reg.rvalue ** 2
 reject = p_value < ALPHA
 ci_lo, ci_hi = fisher_ci(r, n)
+df_deg = n - 2
+t_stat = r * np.sqrt(df_deg / (1 - r ** 2)) if abs(r) < 1 else np.nan
 
-JUMP_TO_PAGE = {
-    "overview": "home",
-    "correlation": "correlation",
-    "regression": "regression",
-    "transport": "transport",
-    "year": "year",
-}
+# --------------------------------------------------------------------------
+# Session state, language, navigation
+# --------------------------------------------------------------------------
+ORDER = [pid for g in GROUPS for pid in g["pages"]]
 
 if "lang" not in st.session_state:
     st.session_state.lang = "EN"
-if "page" not in st.session_state:
+if "page" not in st.session_state or st.session_state.page not in ORDER:
     st.session_state.page = "home"
 
-st.sidebar.markdown("### 🌐")
-lang = st.sidebar.radio(
-    t(st.session_state.lang)["lang"],
+
+def go_to(pid):
+    st.session_state.page = pid
+
+
+st.sidebar.radio(
+    TEXTS[st.session_state.lang]["lang_short"],
     ["EN", "RU"],
-    index=0 if st.session_state.lang == "EN" else 1,
     horizontal=True,
+    key="lang",
 )
-st.session_state.lang = lang
-tr = t(lang)
+lang = st.session_state.lang
+tr = TEXTS[lang]
+page = st.session_state.page
+PAGE_NAMES = dict(PAGES[lang])
 
-st.sidebar.markdown("---")
-st.sidebar.subheader(tr["settings"])
-show_raw = st.sidebar.checkbox(tr["show_raw"], value=False)
-show_clean = st.sidebar.checkbox(tr["show_clean"], value=True)
+st.sidebar.markdown(f"<div class='logo'>🕹️<br>{tr['logo']}</div>", unsafe_allow_html=True)
 
-st.sidebar.markdown("---")
-jump_labels = {
-    "overview": tr["jump_overview"],
-    "correlation": tr["jump_corr"],
-    "regression": tr["jump_reg"],
-    "transport": tr["jump_transport"],
-    "year": tr["jump_year"],
-}
-jump = st.sidebar.radio(tr["analysis_jump"], list(jump_labels.keys()), format_func=lambda k: jump_labels[k])
-if st.session_state.get("last_jump") != jump:
-    st.session_state.page = JUMP_TO_PAGE[jump]
-    st.session_state.last_jump = jump
+for gi, g in enumerate(GROUPS, 1):
+    st.sidebar.markdown(
+        f"<div class='world-title'>{g['icon']} {tr['world']} {gi} · {g['name'][lang]}</div>",
+        unsafe_allow_html=True,
+    )
+    for pid in g["pages"]:
+        active = pid == page
+        mark = "►" if active else "·"
+        button(
+            st.sidebar,
+            f"{mark} {ORDER.index(pid) + 1:02d} {PAGE_NAMES[pid]}",
+            key=f"nav_{pid}",
+            on_click=go_to,
+            args=(pid,),
+            type="primary" if active else "secondary",
+        )
 
-st.sidebar.markdown("---")
-page_items = PAGES[lang]
-page_ids = [p[0] for p in page_items]
-page_names = {p[0]: p[1] for p in page_items}
-current_index = page_ids.index(st.session_state.page) if st.session_state.page in page_ids else 0
-page = st.sidebar.radio(
-    tr["nav"],
-    page_ids,
-    index=current_index,
-    format_func=lambda k: page_names[k],
+st.sidebar.markdown(
+    f"<div class='score-box'>{tr['score']}<br>n = {n}<br>r = {r:.3f}<br>p = {p_value:.3f}</div>",
+    unsafe_allow_html=True,
 )
-st.session_state.page = page
 
+# Pretty labels
 analysis_df = analysis_df.copy()
-analysis_df["transport_label"] = analysis_df["transport_key"].map(lambda k: transport_name(k, lang))
+analysis_df["transport_label"] = analysis_df["transport_key"].map(lambda k: TRANSPORT_LABELS[lang].get(k, k))
 raw_view = raw_df.copy()
-raw_view["transport_label"] = raw_view["transport_key"].map(lambda k: transport_name(k, lang))
+raw_view["transport_label"] = raw_view["transport_key"].map(lambda k: TRANSPORT_LABELS[lang].get(k, k))
+
+
+# --------------------------------------------------------------------------
+# Reusable UI pieces
+# --------------------------------------------------------------------------
+def group_of(pid):
+    for gi, g in enumerate(GROUPS, 1):
+        if pid in g["pages"]:
+            return gi, g
+    return 1, GROUPS[0]
+
+
+def top_hud(pid):
+    idx = ORDER.index(pid) + 1
+    gi, g = group_of(pid)
+    cells = "".join(
+        f"<i class='{'done' if k < idx else ('now' if k == idx else '')}'></i>"
+        for k in range(1, len(ORDER) + 1)
+    )
+    st.markdown(
+        f"<div class='hud'><span>{g['icon']} {tr['world']} {gi}: <b>{g['name'][lang]}</b></span>"
+        f"<span>{tr['stage']} <b>{idx:02d}</b>/{len(ORDER)}</span></div>"
+        f"<div class='bar'>{cells}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def footer_nav(pid):
+    i = ORDER.index(pid)
+    st.markdown("---")
+    c1, c2, c3 = st.columns([1, 2, 1])
+    if i > 0:
+        button(c1, f"◄ {tr['btn_prev']}", key="prev", on_click=go_to, args=(ORDER[i - 1],))
+    if i < len(ORDER) - 1:
+        nxt = ORDER[i + 1]
+        c2.markdown(
+            f"<div style='text-align:center'>{tr['next_up']}:<br><b style='color:{YELLOW}'>{PAGE_NAMES[nxt]}</b></div>",
+            unsafe_allow_html=True,
+        )
+        button(c3, f"{tr['btn_next']} ►", key="next", on_click=go_to, args=(nxt,), type="primary")
+    else:
+        button(c3, f"↻ {tr['btn_restart']}", key="restart", on_click=go_to, args=("home",), type="primary")
 
 
 def kpi_row():
@@ -174,6 +214,7 @@ def scatter_fig(with_line=True):
         x="travel_minutes",
         y="attendance_percent",
         color="transport_label",
+        color_discrete_sequence=COLORWAY,
         hover_data=["student", "year"],
         labels={
             "travel_minutes": tr["x_axis"],
@@ -182,90 +223,78 @@ def scatter_fig(with_line=True):
         },
         title=tr["scatter_title"],
     )
+    fig.update_traces(marker=dict(size=12, symbol="square", line=dict(color=BLACK, width=2)))
     if with_line:
         line_x = np.linspace(x.min(), x.max(), 100)
         line_y = reg.intercept + reg.slope * line_x
         fig.add_trace(
-            go.Scatter(
-                x=line_x,
-                y=line_y,
-                mode="lines",
-                name="OLS",
-                line=dict(color="#0f172a", width=3),
-            )
+            go.Scatter(x=line_x, y=line_y, mode="lines", name="OLS", line=dict(color=YELLOW, width=4))
         )
     fig.update_layout(legend_title_text="")
     return fig
 
 
-def show_tables_if_needed():
-    if show_raw:
-        st.subheader(tr["raw_table"])
-        st.dataframe(
-            raw_view[
-                [
-                    "student",
-                    "year",
-                    "travel_raw",
-                    "transport_raw",
-                    "attendance_raw",
-                ]
-            ].rename(
-                columns={
-                    "student": tr["col_student"],
-                    "year": tr["col_year"],
-                    "travel_raw": tr["col_travel_raw"],
-                    "transport_raw": tr["col_transport"],
-                    "attendance_raw": tr["col_att_raw"],
-                }
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-    if show_clean:
-        st.subheader(tr["clean_table"])
-        st.dataframe(
-            analysis_df[
-                [
-                    "student",
-                    "year",
-                    "travel_minutes",
-                    "transport_label",
-                    "attendance_percent",
-                ]
-            ].rename(
-                columns={
-                    "student": tr["col_student"],
-                    "year": tr["col_year"],
-                    "travel_minutes": tr["col_travel"],
-                    "transport_label": tr["col_transport"],
-                    "attendance_percent": tr["col_att"],
-                }
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
+def style_bars(fig, color=CYAN):
+    fig.update_traces(
+        marker_color=color,
+        marker_line_color="#ffffff",
+        marker_line_width=3,
+        textposition="outside",
+        textfont=dict(family="Press Start 2P, monospace", size=11, color="#ffffff"),
+        cliponaxis=False,
+    )
+    return fig
 
 
-# ---------- pages ----------
-if page == "home":
+def decision_box():
+    klass = "ok" if reject else "warn"
+    decision = tr["reject"] if reject else tr["fail"]
+    st.markdown(f"<div class='decision {klass}'>{decision}</div>", unsafe_allow_html=True)
+
+
+# --------------------------------------------------------------------------
+# Pages
+# --------------------------------------------------------------------------
+def page_home():
     st.markdown(
-        f"<div class='hero'><h1>📊 {tr['hero_title']}</h1><p>{tr['hero_lead']}</p></div>",
+        f"<div class='hero'><div class='tag blink'>★ {tr['btn_start']} ★</div>"
+        f"<h1>{tr['hero_title']}</h1><p>{tr['hero_lead']}</p></div>",
         unsafe_allow_html=True,
     )
-    kpi_row()
-    st.plotly_chart(scatter_fig(), use_container_width=True)
-    show_tables_if_needed()
+    _, mid, _ = st.columns([1, 1, 1])
+    button(mid, f"► {tr['btn_start']}", key="start", on_click=go_to, args=("about",), type="primary")
 
-elif page == "about":
-    st.header("📋 " + tr["about_title"])
+    st.write("")
+    kpi_row()
+
+    phrase = describe_r(r, lang)
+    sentence = (tr["key_sentence_sig"] if reject else tr["key_sentence_ns"]).format(phrase=phrase, r=r, p=p_value)
+    st.markdown(
+        f"<div class='keyresult'><div class='lbl'>★ {tr['key_result']}</div><div class='txt'>{sentence}</div></div>",
+        unsafe_allow_html=True,
+    )
+    show(scatter_fig())
+
+    st.subheader(tr["home_map"])
+    cols = st.columns(len(GROUPS))
+    for gi, (col, g) in enumerate(zip(cols, GROUPS), 1):
+        col.markdown(
+            f"<div class='worldcard'><div class='w'>{g['icon']} {tr['world']} {gi}</div>"
+            f"<div class='n'>{g['name'][lang]}</div><div class='d'>{g['desc'][lang]}</div></div>",
+            unsafe_allow_html=True,
+        )
+
+
+def page_about():
+    st.header(tr["about_title"])
     st.write(tr["about_body"])
     st.subheader(tr["methods_title"])
     st.markdown(tr["methods_list"])
     kpi_row()
 
-elif page == "research":
-    st.header("❓ " + tr["rq_title"])
+
+def page_research():
+    st.header(tr["rq_title"])
     st.info(tr["rq_text"])
     st.subheader(tr["variables"])
     c1, c2 = st.columns(2)
@@ -276,53 +305,55 @@ elif page == "research":
         st.markdown(f"**{tr['y_title']}**")
         st.write(tr["y_text"])
 
-elif page == "hypotheses":
-    st.header("🎯 " + tr["obj_title"])
+
+def page_hypotheses():
+    st.header(tr["obj_title"])
     st.write(tr["obj_text"])
     st.subheader(tr["hyp_title"])
     st.markdown(f"- **{tr['h0']}**")
     st.markdown(f"- **{tr['h1']}**")
     st.success(tr["alpha"])
 
-elif page == "survey":
-    st.header("📊 " + tr["survey_title"])
-    st.caption(tr["survey_note"])
-    st.dataframe(
-        raw_view[
-            ["student", "year", "travel_raw", "transport_label", "attendance_raw", "action"]
-        ].rename(
-            columns={
-                "student": tr["col_student"],
-                "year": tr["col_year"],
-                "travel_raw": tr["col_travel_raw"],
-                "transport_label": tr["col_transport"],
-                "attendance_raw": tr["col_att_raw"],
-                "action": tr["col_action"],
-            }
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
-    show_tables_if_needed()
 
-elif page == "cleaning":
-    st.header("🧹 " + tr["clean_title"])
+def page_survey():
+    st.header(tr["survey_title"])
+    st.caption(tr["survey_note"])
+    st.caption(
+        f"{tr['metric_n']}: {len(raw_df)} · {tr['kept']}: {n} · {tr['excluded']}: {len(raw_df) - n}"
+    )
+    tab_all, tab_clean = st.tabs([tr["tab_all"], tr["tab_clean"]])
+    with tab_all:
+        table(
+            raw_view[["student", "year", "travel_raw", "transport_label", "attendance_raw", "action"]].rename(
+                columns={
+                    "student": tr["col_student"],
+                    "year": tr["col_year"],
+                    "travel_raw": tr["col_travel_raw"],
+                    "transport_label": tr["col_transport"],
+                    "attendance_raw": tr["col_att_raw"],
+                    "action": tr["col_action"],
+                }
+            )
+        )
+    with tab_clean:
+        table(
+            analysis_df[["student", "year", "travel_minutes", "transport_label", "attendance_percent"]].rename(
+                columns={
+                    "student": tr["col_student"],
+                    "year": tr["col_year"],
+                    "travel_minutes": tr["col_travel"],
+                    "transport_label": tr["col_transport"],
+                    "attendance_percent": tr["col_att"],
+                }
+            )
+        )
+
+
+def page_cleaning():
+    st.header(tr["clean_title"])
     st.write(tr["clean_intro"])
     st.subheader(tr["clean_examples"])
-    st.markdown(
-        "\n".join(
-            [
-                f"- {tr['ex1']}",
-                f"- {tr['ex2']}",
-                f"- {tr['ex3']}",
-                f"- {tr['ex4']}",
-                f"- {tr['ex5']}",
-                f"- {tr['ex6']}",
-                f"- {tr['ex7']}",
-                f"- {tr['ex8']}",
-            ]
-        )
-    )
+    st.markdown("\n".join(f"- {tr[f'ex{i}']}" for i in range(1, 9)))
     examples = pd.DataFrame(
         {
             tr["raw_in"]: [
@@ -335,171 +366,150 @@ elif page == "cleaning":
                 "99,90%",
                 "1 мин + Самолет",
             ],
-            tr["cleaned_to"]: ["60 min", "90 min", "12.5 min", "25 min", "40 min", "95%", "99.9%", "excluded"],
+            tr["cleaned_to"]: ["60 min", "90 min", "12.5 min", "25 min", "40 min", "95%", "99.9%", tr["excluded_word"]],
             tr["rule"]: [
-                "hours → minutes",
-                "hours → minutes",
-                "range midpoint",
-                "range midpoint",
-                "range midpoint",
-                "range midpoint",
-                "comma decimal",
-                "unrealistic commute",
+                tr["rule_hours"],
+                tr["rule_hours"],
+                tr["rule_range"],
+                tr["rule_range"],
+                tr["rule_range"],
+                tr["rule_range"],
+                tr["rule_comma"],
+                tr["rule_unreal"],
             ],
         }
     )
-    st.dataframe(examples, use_container_width=True, hide_index=True)
+    table(examples)
     st.subheader(tr["excluded"])
     excluded = raw_view.loc[~raw_view["keep"]]
-    st.dataframe(
-        excluded[["student", "travel_raw", "transport_raw", "attendance_raw", "action"]],
-        use_container_width=True,
-        hide_index=True,
-    )
+    table(excluded[["student", "travel_raw", "transport_raw", "attendance_raw", "action"]])
     st.subheader(tr["kept"])
-    st.dataframe(
-        analysis_df[
-            ["student", "travel_raw", "travel_minutes", "attendance_raw", "attendance_percent", "travel_note"]
-        ],
-        use_container_width=True,
-        hide_index=True,
+    table(
+        analysis_df[["student", "travel_raw", "travel_minutes", "attendance_raw", "attendance_percent", "travel_note"]]
     )
 
-elif page == "descriptive":
-    st.header("📈 " + tr["desc_title"])
+
+def page_descriptive():
+    st.header(tr["desc_title"])
     kpi_row()
     time_s = summarize(analysis_df["travel_minutes"])
     att_s = summarize(analysis_df["attendance_percent"])
-    table = pd.DataFrame(
+    keys = ["mean", "median", "min", "max", "std", "var", "q1", "q3", "iqr"]
+    labels = ["mean", "median", "minimum", "maximum", "std", "var", "q1", "q3", "iqr"]
+    tbl = pd.DataFrame(
         {
-            "": [
-                tr["mean"],
-                tr["median"],
-                tr["minimum"],
-                tr["maximum"],
-                tr["std"],
-                tr["var"],
-                tr["q1"],
-                tr["q3"],
-                tr["iqr"],
-            ],
-            tr["var_time"]: [
-                time_s["mean"],
-                time_s["median"],
-                time_s["min"],
-                time_s["max"],
-                time_s["std"],
-                time_s["var"],
-                time_s["q1"],
-                time_s["q3"],
-                time_s["iqr"],
-            ],
-            tr["var_att"]: [
-                att_s["mean"],
-                att_s["median"],
-                att_s["min"],
-                att_s["max"],
-                att_s["std"],
-                att_s["var"],
-                att_s["q1"],
-                att_s["q3"],
-                att_s["iqr"],
-            ],
+            "": [tr[k] for k in labels],
+            tr["var_time"]: [time_s[k] for k in keys],
+            tr["var_att"]: [att_s[k] for k in keys],
         }
     ).round(2)
-    st.dataframe(table, use_container_width=True, hide_index=True)
+    table(tbl)
 
-elif page == "visualization":
-    st.header("📊 " + tr["viz_title"])
+
+def page_visualization():
+    st.header(tr["viz_title"])
+    tab_h, tab_s, tab_b = st.tabs([tr["tab_hist"], tr["tab_scatter"], tr["tab_box"]])
+    with tab_h:
+        c1, c2 = st.columns(2)
+        with c1:
+            fig = px.histogram(
+                analysis_df,
+                x="travel_minutes",
+                nbins=10,
+                title=tr["hist_time"],
+                labels={"travel_minutes": tr["x_axis"]},
+            )
+            fig.update_traces(marker_color=CYAN, marker_line_color="#ffffff", marker_line_width=2)
+            fig.update_layout(yaxis_title=tr["count"], bargap=0.05)
+            show(fig, 380)
+        with c2:
+            fig = px.histogram(
+                analysis_df,
+                x="attendance_percent",
+                nbins=10,
+                title=tr["hist_att"],
+                labels={"attendance_percent": tr["y_axis"]},
+            )
+            fig.update_traces(marker_color=PINK, marker_line_color="#ffffff", marker_line_width=2)
+            fig.update_layout(yaxis_title=tr["count"], bargap=0.05)
+            show(fig, 380)
+    with tab_s:
+        show(scatter_fig(), 480)
+    with tab_b:
+        b1, b2 = st.columns(2)
+        with b1:
+            fig = px.box(
+                analysis_df,
+                y="travel_minutes",
+                points="all",
+                title=tr["var_time"],
+                labels={"travel_minutes": tr["x_axis"]},
+            )
+            fig.update_traces(marker_color=CYAN, line_color=CYAN, fillcolor="rgba(53,224,255,0.25)")
+            show(fig, 440)
+        with b2:
+            fig = px.box(
+                analysis_df,
+                y="attendance_percent",
+                points="all",
+                title=tr["var_att"],
+                labels={"attendance_percent": tr["y_axis"]},
+            )
+            fig.update_traces(marker_color=PINK, line_color=PINK, fillcolor="rgba(255,79,154,0.25)")
+            show(fig, 440)
+
+
+def page_correlation():
+    st.header(tr["corr_title"])
+    phrase = describe_r(r, lang)
     c1, c2 = st.columns(2)
     with c1:
-        fig = px.histogram(
-            analysis_df,
-            x="travel_minutes",
-            nbins=10,
-            title=tr["hist_time"],
-            labels={"travel_minutes": tr["x_axis"]},
-        )
-        fig.update_layout(yaxis_title=tr["count"])
-        st.plotly_chart(fig, use_container_width=True)
-    with c2:
-        fig = px.histogram(
-            analysis_df,
-            x="attendance_percent",
-            nbins=10,
-            title=tr["hist_att"],
-            labels={"attendance_percent": tr["y_axis"]},
-        )
-        fig.update_layout(yaxis_title=tr["count"])
-        st.plotly_chart(fig, use_container_width=True)
-    st.plotly_chart(scatter_fig(), use_container_width=True)
-    box = go.Figure()
-    box.add_trace(go.Box(y=analysis_df["travel_minutes"], name=tr["var_time"]))
-    box.add_trace(go.Box(y=analysis_df["attendance_percent"], name=tr["var_att"], yaxis="y2"))
-    box.update_layout(
-        title=tr["box_title"],
-        yaxis=dict(title=tr["var_time"]),
-        yaxis2=dict(title=tr["var_att"], overlaying="y", side="right"),
-        showlegend=True,
-    )
-    st.plotly_chart(box, use_container_width=True)
-    b1, b2 = st.columns(2)
-    with b1:
-        st.plotly_chart(
-            px.box(analysis_df, y="travel_minutes", points="all", title=tr["var_time"], labels={"travel_minutes": tr["x_axis"]}),
-            use_container_width=True,
-        )
-    with b2:
-        st.plotly_chart(
-            px.box(analysis_df, y="attendance_percent", points="all", title=tr["var_att"], labels={"attendance_percent": tr["y_axis"]}),
-            use_container_width=True,
-        )
-
-elif page == "correlation":
-    st.header("🔗 " + tr["corr_title"])
-    phrase = describe_r(r, lang)
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        st.markdown(f"<div class='card'><div>{tr['pearson']}</div><div class='big-r'>r = {r:.3f}</div><div>{phrase}</div></div>", unsafe_allow_html=True)
-    with c2:
         st.markdown(
-            f"<div class='card'><div>{tr['pvalue']} = {p_value:.3f}</div><div>α = {ALPHA}</div></div>",
+            f"<div class='card'><div class='lbl'>{tr['pearson']}</div>"
+            f"<div class='big-r'>r = {r:.3f}</div><div class='txt'>{phrase}</div></div>",
             unsafe_allow_html=True,
         )
-    decision = tr["reject"] if reject else tr["fail"]
-    klass = "ok" if reject else "warn"
-    st.markdown(f"<div class='decision {klass}'>{decision}</div>", unsafe_allow_html=True)
+    with c2:
+        st.markdown(
+            f"<div class='card'><div class='lbl'>{tr['pvalue']}</div>"
+            f"<div class='big-r'>{p_value:.3f}</div><div class='txt'>α = {ALPHA}</div></div>",
+            unsafe_allow_html=True,
+        )
+    decision_box()
     st.write(tr["because_lt"] if reject else tr["because_gt"])
-    st.caption(f"95% CI for r (Fisher z): [{ci_lo:.3f}, {ci_hi:.3f}]")
-    st.plotly_chart(scatter_fig(), use_container_width=True)
+    st.caption(f"{tr['ci95']}: [{ci_lo:.3f}, {ci_hi:.3f}]")
+    show(scatter_fig(), 460)
 
-elif page == "regression":
-    st.header("📉 " + tr["reg_title"])
+
+def page_regression():
+    st.header(tr["reg_title"])
     st.subheader(tr["equation"])
     st.latex(rf"\text{{Attendance}} = {reg.intercept:.2f} {reg.slope:+.4f} \times \text{{Travel time}}")
     c1, c2, c3 = st.columns(3)
     c1.metric(tr["slope"], f"{reg.slope:.4f}")
     c2.metric(tr["intercept"], f"{reg.intercept:.2f}")
     c3.metric(tr["r2"], f"{r2:.3f}")
-    st.plotly_chart(scatter_fig(with_line=True), use_container_width=True)
+    show(scatter_fig(with_line=True), 460)
 
-elif page == "testing":
-    st.header("🧪 " + tr["test_title"])
+
+def page_testing():
+    st.header(tr["test_title"])
     st.markdown(f"- **{tr['test_h0']}**")
     st.markdown(f"- **{tr['test_h1']}**")
     st.write(tr["alpha"])
     c1, c2, c3 = st.columns(3)
     c1.metric("r", f"{r:.3f}")
-    c2.metric(tr["pvalue"], f"{p_value:.3f}")
-    c3.metric("α", str(ALPHA))
-    decision = tr["reject"] if reject else tr["fail"]
-    if reject:
-        st.success(f"{decision}. {tr['because_lt']}")
-    else:
-        st.warning(f"{decision}. {tr['because_gt']}")
+    c2.metric(tr["t_stat"], f"{t_stat:.3f}")
+    c3.metric(tr["df"], str(df_deg))
+    c4, c5 = st.columns(2)
+    c4.metric(tr["pvalue"], f"{p_value:.3f}")
+    c5.metric("α", str(ALPHA))
+    decision_box()
+    st.write(tr["because_lt"] if reject else tr["because_gt"])
 
-elif page == "year":
-    st.header("👥 " + tr["year_title"])
+
+def page_year():
+    st.header(tr["year_title"])
     st.info(tr["year_note"])
     grouped = (
         analysis_df.groupby("year")
@@ -508,11 +518,7 @@ elif page == "year":
         .sort_values("year")
     )
     grouped["attendance"] = grouped["attendance"].round(1)
-    st.dataframe(
-        grouped.rename(columns={"year": tr["col_year"], "attendance": tr["col_att"], "count": tr["n_group"]}),
-        use_container_width=True,
-        hide_index=True,
-    )
+    table(grouped.rename(columns={"year": tr["col_year"], "attendance": tr["col_att"], "count": tr["n_group"]}))
     fig = px.bar(
         grouped,
         x="year",
@@ -521,11 +527,15 @@ elif page == "year":
         title=tr["year_mean"],
         labels={"year": tr["col_year"], "attendance": tr["col_att"]},
     )
+    style_bars(fig, YELLOW)
     fig.update_traces(texttemplate="%{text:.1f}%")
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_xaxes(type="category")
+    fig.update_yaxes(range=[0, 115])
+    show(fig)
 
-elif page == "transport":
-    st.header("🚌 " + tr["transport_title"])
+
+def page_transport():
+    st.header(tr["transport_title"])
     st.info(tr["transport_note"])
     grouped = (
         analysis_df.groupby("transport_label")
@@ -534,16 +544,10 @@ elif page == "transport":
         .sort_values("attendance", ascending=False)
     )
     grouped["attendance"] = grouped["attendance"].round(1)
-    st.dataframe(
+    table(
         grouped.rename(
-            columns={
-                "transport_label": tr["col_transport"],
-                "attendance": tr["col_att"],
-                "count": tr["n_group"],
-            }
-        ),
-        use_container_width=True,
-        hide_index=True,
+            columns={"transport_label": tr["col_transport"], "attendance": tr["col_att"], "count": tr["n_group"]}
+        )
     )
     fig = px.bar(
         grouped,
@@ -554,11 +558,15 @@ elif page == "transport":
         title=tr["transport_title"],
         labels={"attendance": tr["col_att"], "transport_label": tr["col_transport"]},
     )
+    style_bars(fig, GREEN)
     fig.update_traces(texttemplate="%{text:.1f}%")
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_xaxes(range=[0, 120])
+    fig.update_yaxes(autorange="reversed")
+    show(fig)
 
-elif page == "bins":
-    st.header("📍 " + tr["bins_title"])
+
+def page_bins():
+    st.header(tr["bins_title"])
     st.write(tr["bins_note"])
     order = ["0–15", "16–30", "31–60", "61+"]
     grouped = (
@@ -569,17 +577,7 @@ elif page == "bins":
         .reset_index()
     )
     grouped["attendance"] = grouped["attendance"].round(1)
-    st.dataframe(
-        grouped.rename(
-            columns={
-                "travel_bin": tr["x_axis"],
-                "attendance": tr["col_att"],
-                "count": tr["n_group"],
-            }
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
+    table(grouped.rename(columns={"travel_bin": tr["x_axis"], "attendance": tr["col_att"], "count": tr["n_group"]}))
     fig = px.bar(
         grouped,
         x="travel_bin",
@@ -588,11 +586,14 @@ elif page == "bins":
         category_orders={"travel_bin": order},
         labels={"travel_bin": tr["x_axis"], "attendance": tr["col_att"]},
     )
+    style_bars(fig, PINK)
     fig.update_traces(texttemplate="%{text:.1f}%")
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_yaxes(range=[0, 115])
+    show(fig)
 
-elif page == "interpretation":
-    st.header("💡 " + tr["interp_title"])
+
+def page_interpretation():
+    st.header(tr["interp_title"])
     st.write(tr["interp_r"])
     st.markdown(f"**r = {r:.3f}** → {describe_r(r, lang)}")
     st.markdown(f"**p = {p_value:.3f}**, α = {ALPHA}")
@@ -600,29 +601,51 @@ elif page == "interpretation":
     st.warning(tr["causation"])
     st.write(tr["interp_extra"])
 
-elif page == "limitations":
-    st.header("⚠️ " + tr["lim_title"])
+
+def page_limitations():
+    st.header(tr["lim_title"])
     st.markdown(tr["lim_list"])
     st.info(tr["lim_cause"])
     st.markdown(
-        """
-```
-Travel time ──► Attendance
-Schedule, motivation, workload, health, transport reliability ──► Attendance
-```
-"""
+        "<div class='pixel-ascii'>Travel time ──► Attendance\n"
+        "Schedule, motivation, workload, health, transport reliability ──► Attendance</div>",
+        unsafe_allow_html=True,
     )
 
-elif page == "conclusion":
-    st.header("✅ " + tr["conc_title"])
+
+def page_conclusion():
+    st.header(tr["conc_title"])
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(tr["sample_size"], n)
     c2.metric("Pearson r", f"{r:.3f}")
     c3.metric(tr["pvalue"], f"{p_value:.3f}")
     c4.metric("α", str(ALPHA))
-    decision = tr["reject"] if reject else tr["fail"]
-    st.markdown(f"**{tr['result']}:** {decision}")
+    st.write("")
+    decision_box()
     st.success(tr["conc_yes"] if reject else tr["conc_no"])
     st.caption(tr["footer"])
 
-st.sidebar.caption(f"n = {n} · r = {r:.3f} · p = {p_value:.3f}")
+
+PAGE_FUNCS = {
+    "home": page_home,
+    "about": page_about,
+    "research": page_research,
+    "hypotheses": page_hypotheses,
+    "survey": page_survey,
+    "cleaning": page_cleaning,
+    "descriptive": page_descriptive,
+    "visualization": page_visualization,
+    "correlation": page_correlation,
+    "regression": page_regression,
+    "testing": page_testing,
+    "year": page_year,
+    "transport": page_transport,
+    "bins": page_bins,
+    "interpretation": page_interpretation,
+    "limitations": page_limitations,
+    "conclusion": page_conclusion,
+}
+
+top_hud(page)
+PAGE_FUNCS[page]()
+footer_nav(page)

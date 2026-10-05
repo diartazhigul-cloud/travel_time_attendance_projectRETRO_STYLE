@@ -442,3 +442,124 @@ def describe_r(r, lang):
     else:
         direction = t["dir_zero"]
     return t["corr_phrase"].format(strength=strength, direction=direction)
+
+
+# ---------------------------------------------------------------------------
+# Navigation groups ("worlds") and extra UI texts for the retro-game layout
+# ---------------------------------------------------------------------------
+GROUPS = [
+    {
+        "id": "briefing",
+        "icon": "🏰",
+        "name": {"EN": "Briefing", "RU": "Брифинг"},
+        "desc": {
+            "EN": "What we study and why",
+            "RU": "Что изучаем и зачем",
+        },
+        "pages": ["home", "about", "research", "hypotheses"],
+    },
+    {
+        "id": "data",
+        "icon": "💾",
+        "name": {"EN": "Data", "RU": "Данные"},
+        "desc": {
+            "EN": "Survey answers and how we cleaned them",
+            "RU": "Ответы опроса и их очистка",
+        },
+        "pages": ["survey", "cleaning"],
+    },
+    {
+        "id": "analysis",
+        "icon": "⚔️",
+        "name": {"EN": "Analysis", "RU": "Анализ"},
+        "desc": {
+            "EN": "Statistics, charts, correlation, regression, test",
+            "RU": "Статистика, графики, корреляция, регрессия, тест",
+        },
+        "pages": ["descriptive", "visualization", "correlation", "regression", "testing"],
+    },
+    {
+        "id": "bonus",
+        "icon": "⭐",
+        "name": {"EN": "Bonus levels", "RU": "Бонус-уровни"},
+        "desc": {
+            "EN": "Extra look by year, transport and time groups",
+            "RU": "Доп. срезы: курс, транспорт, группы времени",
+        },
+        "pages": ["year", "transport", "bins"],
+    },
+    {
+        "id": "finale",
+        "icon": "🏆",
+        "name": {"EN": "Finale", "RU": "Финал"},
+        "desc": {
+            "EN": "Meaning, limits and the final answer",
+            "RU": "Смысл, ограничения и итоговый ответ",
+        },
+        "pages": ["interpretation", "limitations", "conclusion"],
+    },
+]
+
+TEXTS["EN"].update(
+    {
+        "logo": "TRAVEL & ATTENDANCE",
+        "world": "WORLD",
+        "stage": "STAGE",
+        "score": "SCORE",
+        "btn_start": "PRESS START",
+        "btn_next": "NEXT",
+        "btn_prev": "BACK",
+        "btn_restart": "PLAY AGAIN",
+        "next_up": "Next level",
+        "home_map": "Game map",
+        "key_result": "Key result",
+        "key_sentence_sig": "In this sample, {phrase} was found (r = {r:.3f}, p = {p:.3f}). The link is statistically significant.",
+        "key_sentence_ns": "In this sample, {phrase} was found (r = {r:.3f}, p = {p:.3f}). The link is NOT statistically significant.",
+        "tab_all": "All responses",
+        "tab_clean": "Cleaned data",
+        "tab_hist": "Histograms",
+        "tab_scatter": "Scatter plot",
+        "tab_box": "Box plots",
+        "t_stat": "t-statistic",
+        "df": "Degrees of freedom",
+        "ci95": "95% CI for r (Fisher z)",
+        "rule_hours": "hours → minutes",
+        "rule_range": "range midpoint",
+        "rule_comma": "comma decimal",
+        "rule_unreal": "unrealistic commute",
+        "excluded_word": "excluded",
+        "lang_short": "LANG",
+    }
+)
+
+TEXTS["RU"].update(
+    {
+        "logo": "ДОРОГА И ПОСЕЩАЕМОСТЬ",
+        "world": "МИР",
+        "stage": "УРОВЕНЬ",
+        "score": "СЧЁТ",
+        "btn_start": "НАЖМИ START",
+        "btn_next": "ДАЛЕЕ",
+        "btn_prev": "НАЗАД",
+        "btn_restart": "ИГРАТЬ СНОВА",
+        "next_up": "Следующий уровень",
+        "home_map": "Карта игры",
+        "key_result": "Главный результат",
+        "key_sentence_sig": "В этой выборке найдена {phrase} (r = {r:.3f}, p = {p:.3f}). Связь статистически значима.",
+        "key_sentence_ns": "В этой выборке найдена {phrase} (r = {r:.3f}, p = {p:.3f}). Связь статистически НЕ значима.",
+        "tab_all": "Все ответы",
+        "tab_clean": "Очищенные данные",
+        "tab_hist": "Гистограммы",
+        "tab_scatter": "Диаграмма рассеяния",
+        "tab_box": "Box plot",
+        "t_stat": "t-статистика",
+        "df": "Степени свободы",
+        "ci95": "95% ДИ для r (z-преобразование Фишера)",
+        "rule_hours": "часы → минуты",
+        "rule_range": "середина диапазона",
+        "rule_comma": "запятая как десятичный разделитель",
+        "rule_unreal": "нереалистичная дорога",
+        "excluded_word": "исключено",
+        "lang_short": "ЯЗЫК",
+    }
+)
